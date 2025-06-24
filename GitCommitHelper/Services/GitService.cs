@@ -73,4 +73,22 @@ public static class GitService
                      .Select(b => b.Trim())
                      .ToList();
     }
+
+    public static Task<string> GetStagedDiffAsync(string repoPath)
+    {
+        return RunCommandAsync("diff --cached", repoPath);
+    }
+
+    public static async Task<bool> HasStagedChangesAsync(string repoPath)
+    {
+        try
+        {
+            var output = await RunCommandAsync("diff --cached --quiet", repoPath);
+            return false;
+        }
+        catch
+        {
+            return true;
+        }
+    }
 }

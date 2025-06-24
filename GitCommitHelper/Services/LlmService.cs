@@ -22,7 +22,8 @@ public class LlmService : ILlmService
 
     public Task<string> GetPrDetailsAsync(string diffContent)
     {
-        var systemPrompt = "You are a senior software developer writing a pull request. Based on the following git diff, generate a PR Title and a PR Description. The description should be in Markdown format, outlining the key changes and their purpose. Respond ONLY in the format: [TITLE]: Your PR Title\n\n[DESCRIPTION]:\nYour PR Description in markdown.";
+        var systemPrompt = "You are a senior software developer writing a pull request. Based on the following git diff, generate a PR Title and a PR Description. The description should be in Markdown format, outlining the key changes and their purpose. Respond ONLY in the format: [TITLE]: Your PR Title\n\n[DESCRIPTION]:\nYour PR Description in markdown." +
+            "Keep it short and sweet.";
         return SendRequestAsync(systemPrompt, diffContent);
     }
 
