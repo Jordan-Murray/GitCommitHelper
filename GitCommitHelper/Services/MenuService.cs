@@ -51,10 +51,57 @@ public static class MenuService
         return await AnsiConsole.Status().Spinner(Spinner.Known.Dots).StartAsync(statusText, async ctx => await action());
     }
 
+    public static void RenderPreviewMode(string diffContent, string generatedContent, string reviewContent = "")
+    {
+        var layout = new Layout("Root")
+            .SplitColumns(
+                new Layout("Left").Size(60),
+                new Layout("Right").Size(40)
+            );
+
+        var diffPanel = new Panel(diffContent.EscapeMarkup())
+            .Header("📄 Git Diff")
+            .Border(BoxBorder.Rounded)
+            .Padding(1, 1);
+
+        var rightLayout = new Layout("Right")
+            .SplitRows(
+                new Layout("Generated").Size(50),
+                new Layout("Review").Size(50)
+            );
+
+        var generatedPanel = new Panel(generatedContent.EscapeMarkup())
+            .Header("🤖 Generated Content")
+            .Border(BoxBorder.Rounded)
+            .Padding(1, 1);
+
+        var reviewPanel = new Panel(reviewContent.EscapeMarkup())
+            .Header("🔍 Code Review")
+            .Border(BoxBorder.Rounded)
+            .Padding(1, 1);
+
+        layout["Left"].Update(diffPanel);
+        rightLayout["Generated"].Update(generatedPanel);
+        rightLayout["Review"].Update(reviewPanel);
+        layout["Right"].Update(rightLayout);
+
+        AnsiConsole.Write(layout);
+    }
+
+    public static bool ConfirmAction(string message)
+    {
+        return AnsiConsole.Confirm(message);
+    }
+
+    public static void Clear()
+    {
+        AnsiConsole.Clear();
+    }
+
     public static string BrowseForDirectory(string title, string? startPath = null)
     {
         var currentPath = startPath ?? Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-        
+
         while (true)
         {
             try
@@ -65,13 +112,13 @@ public static class MenuService
                     .ToList();
 
                 var choices = new List<string> { "[Use this directory]" };
-                
+
                 // Add drive switching option on Windows
                 if (Environment.OSVersion.Platform == PlatformID.Win32NT)
                 {
                     choices.Add("🔄 Switch Drive");
                 }
-                
+
                 if (Directory.GetParent(currentPath) != null)
                 {
                     choices.Add(".. (Go up one level)");
@@ -79,7 +126,7 @@ public static class MenuService
 
                 choices.AddRange(directories);
 
-                var displayPath = currentPath.Length > 60 
+                var displayPath = currentPath.Length > 60
                     ? "..." + currentPath.Substring(currentPath.Length - 57)
                     : currentPath;
 
@@ -127,7 +174,8 @@ public static class MenuService
             }
             catch (Exception ex)
             {
-                RenderWarning($"Error accessing directory: {ex.Message}");
+                ErrorLoggingService.LogError(ex);
+                RenderWarning($"An unexpected error occurred: {ex.Message}. Please check the error_log.txt file for details.");
                 currentPath = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
             }
         }
@@ -139,9 +187,10 @@ public static class MenuService
         {
             var drives = DriveInfo.GetDrives()
                 .Where(d => d.IsReady)
-                .Select(d => new { 
+                .Select(d => new
+                {
                     Root = d.RootDirectory.FullName,
-                    Display = $"{d.RootDirectory.FullName.TrimEnd('\\')} ({d.DriveType})" + 
+                    Display = $"{d.RootDirectory.FullName.TrimEnd('\\')} ({d.DriveType})" +
                              (d.DriveType == DriveType.Fixed ? $" - {d.AvailableFreeSpace / (1024 * 1024 * 1024):F1} GB free" : "")
                 })
                 .ToList();
@@ -170,5 +219,20 @@ public static class MenuService
             RenderWarning($"Error accessing drives: {ex.Message}");
             return null;
         }
+    }
+
+    public static List<T> PromptWithMultiSelect<T>(string title, IEnumerable<T> choices, Func<T, string> displaySelector) where T : notnull
+    {
+        var promptTitle = $"{title}\n[grey](Press [blue]<space>[/] to toggle a file, [green]<enter>[/] to confirm selection)[/]";
+
+        var prompt = new MultiSelectionPrompt<T>()
+            .Title(promptTitle)
+            .NotRequired()
+            .PageSize(30)
+            .MoreChoicesText("[grey](Move up and down to reveal more choices)[/]")
+            .UseConverter(displaySelector)
+            .AddChoices(choices);
+
+        return AnsiConsole.Prompt(prompt);
     }
 }

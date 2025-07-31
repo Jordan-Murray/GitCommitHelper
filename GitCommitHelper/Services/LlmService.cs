@@ -5,7 +5,7 @@ using System.Text.Json.Nodes;
 
 public class LlmService : ILlmService
 {
-    private static readonly HttpClient _httpClient = new();
+    private static readonly HttpClient _httpClient = new() { Timeout = TimeSpan.FromSeconds(15) };
     private readonly string _modelRunnerUrl = "http://localhost:12434/engines/v1/chat/completions";
     private readonly string _modelName;
 
@@ -27,7 +27,19 @@ public class LlmService : ILlmService
         return SendRequestAsync(systemPrompt, diffContent);
     }
 
-    private async Task<string> SendRequestAsync(string systemPrompt, string userPrompt)
+    public Task<string> GetCodeReviewAsync(string diffContent)
+    {
+        var systemPrompt = "You are a senior C# developer conducting a code review. Analyze the following git diff and provide constructive feedback. Focus on: " +
+            "1. Code quality and best practices " +
+            "2. Potential bugs or issues " +
+            "3. Performance considerations " +
+            "4. Security concerns " +
+            "5. Maintainability improvements " +
+            "Format your response as markdown with clear sections. Be concise but thorough. If the code looks good, mention what's done well.";
+        return SendRequestAsync(systemPrompt, diffContent, maxTokens: 1000);
+    }
+
+    private async Task<string> SendRequestAsync(string systemPrompt, string userPrompt, int maxTokens = 500)
     {
         Console.WriteLine("    [LlmService] Sending request to local Gemma model...");
         var payload = new
@@ -39,17 +51,33 @@ public class LlmService : ILlmService
                 new { role = "user", content = userPrompt }
             },
             temperature = 0.3,
-            max_tokens = 500
+            max_tokens = maxTokens
         };
 
         var jsonPayload = JsonSerializer.Serialize(payload);
         using var httpContent = new StringContent(jsonPayload, Encoding.UTF8, "application/json");
 
-        var response = await _httpClient.PostAsync(_modelRunnerUrl, httpContent);
+        HttpResponseMessage response;
+        try
+        {
+            response = await _httpClient.PostAsync(_modelRunnerUrl, httpContent);
+        }
+        catch (TaskCanceledException ex)
+        {
+            throw new HttpRequestException($"The request to the local model at '{_modelRunnerUrl}' timed out. Please ensure the model is running and responsive.", ex);
+        }
 
         if (!response.IsSuccessStatusCode)
         {
             var errorContent = await response.Content.ReadAsStringAsync();
+            
+            // Check for token limit errors
+            if (errorContent.Contains("context length") || errorContent.Contains("token limit") || 
+                errorContent.Contains("too many tokens") || response.StatusCode == System.Net.HttpStatusCode.BadRequest)
+            {
+                throw new InvalidOperationException($"Token limit exceeded. The diff content is too large for the model's context window. Try with smaller changes or use chunking.");
+            }
+            
             throw new HttpRequestException($"Request failed with status code {response.StatusCode}. Response: {errorContent}");
         }
 
